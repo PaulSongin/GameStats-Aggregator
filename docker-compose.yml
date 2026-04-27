@@ -1,0 +1,14 @@
+services:
+  python-provider:
+    build: 
+      context: ./PythonProvider
+    ports:
+      - "8000:8000"
+
+  core-backend:
+    build: 
+      context: ./CoreBackend
+    ports:
+      - "5000:8080"
+    depends_on:
+      - python-provider

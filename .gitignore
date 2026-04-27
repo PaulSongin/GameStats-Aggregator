@@ -1,0 +1,28 @@
+# .NET
+[Bb]in/
+[Ob]j/
+out/
+appsettings.Development.json
+*.user
+*.suo
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+.env
+
+# Docker
+.docker/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store
