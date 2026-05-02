@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using CoreBackend.Models; // Чтобы контроллер видел твои модели
+using CoreBackend.Models;
 
 namespace CoreBackend.Controllers;
 
@@ -20,18 +20,19 @@ public class StatsController : ControllerBase
         var client = _clientFactory.CreateClient();
         try 
         {
-            // Обрати внимание: имя хоста "python-provider" должно быть таким же в docker-compose
-            var response = await client.GetAsync($"http://python-provider:8000/fetch/{platform}/{id}");
+            // Обращаемся к внутреннему имени сервиса в Docker
+            var url = $"http://python-provider:8000/fetch/{platform}/{id}";
+            var response = await client.GetAsync(url);
 
             if (!response.IsSuccessStatusCode)
-                return BadRequest("Could not fetch stats from provider");
+                return BadRequest($"Provider error: {response.StatusCode}");
 
             var stats = await response.Content.ReadFromJsonAsync<UnifiedStats>();
             return Ok(stats);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, ex.Message);
+            return StatusCode(500, $"Internal Gateway Error: {ex.Message}");
         }
     }
 }

@@ -1,10 +1,10 @@
-namespace CoreBackend.Models; // Убедись, что namespace совпадает с названием проекта
+namespace CoreBackend.Models;
 
 public record GameInfo(
     string ExternalId, 
     string Title, 
     int PlaytimeMinutes, 
-    string IconUrl
+    string? IconUrl
 );
 
 public record UnifiedStats(
