@@ -1,16 +1,36 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gamestats
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
   python-provider:
-    build: 
+    build:
       context: ./PythonProvider
     ports:
       - "8000:8000"
+    env_file:
+      - ./PythonProvider/.env
     restart: always
 
   core-backend:
-    build: 
+    build:
       context: ./CoreBackend
     ports:
       - "5000:8080" # Внешний порт 5000, внутренний 8080 для .NET 10
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=gamestats;Username=admin;Password=admin123
     depends_on:
       - python-provider
+      - postgres
     restart: always
+
+volumes:
+  postgres_data:

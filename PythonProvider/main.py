@@ -2,6 +2,11 @@ from fastapi import FastAPI, HTTPException
 import httpx
 from psnawp_api import PSNAWP
 import logging
+import os
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env файла
+load_dotenv()
 
 app = FastAPI()
 
@@ -10,9 +15,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # === CONFIGURATION ===
-STEAM_API_KEY = "YOUR_STEAM_KEY_HERE"
-PSN_NPSSO = "YOUR_PSN_TOKEN_HERE"
-XBOX_API_KEY = "YOUR_XBL_IO_KEY_HERE"
+STEAM_API_KEY = os.getenv("STEAM_API_KEY", "")
+PSN_NPSSO = os.getenv("PSN_NPSSO", "")
+XBOX_API_KEY = os.getenv("XBOX_API_KEY", "")
 
 @app.get("/")
 async def root():
