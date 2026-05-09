@@ -9,15 +9,26 @@
 http://localhost:5000/api/stats/{platform}/{user_id}
 ```
 
-#### 2. **Python Provider** (внутренний сервис)
+#### 2. **Cache Metrics** (статистика кэширования)
+```
+http://localhost:5000/api/stats/metrics
+```
+
+#### 3. **Python Provider** (внутренний сервис)
 ```
 http://localhost:8000/
 ```
 
-#### 3. **PostgreSQL Database**
+#### 4. **Redis Cache**
 ```
 Host: localhost
-Port: 5432
+Port: 6379
+```
+
+#### 5. **PostgreSQL Database**
+```
+Host: localhost
+Port: 5433
 Database: gamestats
 User: admin
 Password: admin123
@@ -107,9 +118,46 @@ SELECT * FROM "GameRecords";          # Все игры
 
 ## 🔄 Как работает кэширование
 
-1. **Первый запрос** → данные берутся из Steam/PSN/Xbox API → сохраняются в PostgreSQL
-2. **Повторный запрос (в течение 30 минут)** → данные берутся из PostgreSQL (быстрее!)
-3. **Запрос с `?refresh=true`** → принудительно обновляет данные из API
+### Двухуровневая система:
+
+1. **Redis (горячий кэш, TTL: 5 минут)**
+   - Первая линия защиты
+   - Скорость: ~0.5-1 мс
+   - Автоматическое истечение
+
+2. **PostgreSQL (холодный кэш, TTL: 30 минут)**
+   - Долгосрочное хранилище
+   - Скорость: ~10-50 мс
+   - История запросов
+
+3. **API (внешние сервисы)**
+   - Steam/PSN/Xbox API
+   - Скорость: ~500-2000 мс
+   - Только при отсутствии в кэше
+
+### Логика запроса:
+```
+Запрос → Redis → PostgreSQL → API
+         ↓ 1ms    ↓ 10ms       ↓ 500ms
+```
+
+### Проверить метрики кэширования:
+```
+http://localhost:5000/api/stats/metrics
+```
+
+Пример ответа:
+```json
+{
+  "redisHits": 45,
+  "postgresHits": 12,
+  "apiCalls": 3,
+  "totalRequests": 60,
+  "redisHitRate": 75.0,
+  "postgresHitRate": 20.0,
+  "apiCallRate": 5.0
+}
+```
 
 ---
 

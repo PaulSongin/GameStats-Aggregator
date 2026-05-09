@@ -18,6 +18,8 @@ Scalable Design: Easy to add new platforms (Epic Games, Nintendo, etc.) by simpl
 🛠 Tech Stack
 C# / .NET 10.0 (Web API)
 Python 3.11+ (FastAPI, Uvicorn)
+PostgreSQL 16 (Persistent Storage)
+Redis 7 (In-Memory Cache)
 Docker & Docker Compose
 🏁 Getting Started
 Prerequisites
@@ -43,6 +45,7 @@ Once the containers are running, you can access the unified statistics through t
 Steam Stats: GET http://localhost:5000/api/stats/steam/{steam_id64}
 PSN Stats: GET http://localhost:5000/api/stats/psn/{online_id}
 Xbox Stats: GET http://localhost:5000/api/stats/xbox/{gamertag}
+Cache Metrics: GET http://localhost:5000/api/stats/metrics
 📂 Project Structure
 code
 Text

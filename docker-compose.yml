@@ -11,6 +11,15 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+    command: redis-server --appendonly yes
+
   python-provider:
     build:
       context: ./PythonProvider
@@ -27,10 +36,13 @@ services:
       - "5000:8080" # Внешний порт 5000, внутренний 8080 для .NET 10
     environment:
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=gamestats;Username=admin;Password=admin123
+      - ConnectionStrings__Redis=redis:6379
     depends_on:
       - python-provider
       - postgres
+      - redis
     restart: always
 
 volumes:
   postgres_data:
+  redis_data:
