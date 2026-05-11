@@ -5,6 +5,14 @@ export interface GameInfo {
   title: string;
   playtimeMinutes: number;
   iconUrl: string | null;
+  achievements?: {
+    total: number;
+    unlocked: number;
+    recentAchievements: Array<{
+      name: string;
+      unlockTime: number;
+    }>;
+  };
 }
 
 export interface UnifiedStats {

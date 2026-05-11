@@ -3,6 +3,7 @@ import httpx
 from psnawp_api import PSNAWP
 import logging
 import os
+import asyncio
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения из .env файла
@@ -100,19 +101,75 @@ async def fetch_steam(user_id: str):
             logger.error(f"Steam Error: {e}")
             raise HTTPException(status_code=502, detail=f"Steam API unreachable: {e}")
 
+    # Функция для получения достижений игры
+    async def get_game_achievements(client, app_id: str):
+        try:
+            # Получаем статистику достижений пользователя
+            user_stats_url = "http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/"
+            params = {
+                "key": STEAM_API_KEY,
+                "steamid": steam_id,
+                "appid": app_id
+            }
+            res = await client.get(user_stats_url, params=params, timeout=5.0)
+
+            if res.status_code != 200:
+                return None
+
+            data = res.json()
+            achievements = data.get("playerstats", {}).get("achievements", [])
+
+            if not achievements:
+                return None
+
+            total = len(achievements)
+            unlocked = sum(1 for a in achievements if a.get("achieved") == 1)
+
+            # Находим недавние достижения (unlocktime > 0, сортируем по времени)
+            recent = sorted(
+                [a for a in achievements if a.get("achieved") == 1 and a.get("unlocktime", 0) > 0],
+                key=lambda x: x.get("unlocktime", 0),
+                reverse=True
+            )[:3]  # Берём 3 последних
+
+            return {
+                "total": total,
+                "unlocked": unlocked,
+                "recentAchievements": [
+                    {
+                        "name": a.get("apiname", ""),
+                        "unlockTime": a.get("unlocktime", 0)
+                    } for a in recent
+                ]
+            }
+        except Exception as e:
+            logger.debug(f"Failed to get achievements for {app_id}: {e}")
+            return None
+
     # Объединяем данные из обоих источников
     games_dict = {}
     recent_app_ids = set()
 
     # Сначала обрабатываем recently played games для определения порядка
     recent_games = recent_data.get("response", {}).get("games", [])
+
+    # Получаем достижения для недавних игр параллельно
+    async with httpx.AsyncClient() as client:
+        achievement_tasks = [get_game_achievements(client, str(g["appid"])) for g in recent_games[:10]]  # Только для топ-10
+        achievement_results = await asyncio.gather(*achievement_tasks, return_exceptions=True)
+
     for idx, g in enumerate(recent_games):
         app_id = str(g["appid"])
         recent_app_ids.add(app_id)
         icon_hash = g.get('img_icon_url', '')
         icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
 
-        games_dict[app_id] = {
+        # Добавляем данные о достижениях, если они есть
+        achievements_data = None
+        if idx < len(achievement_results) and not isinstance(achievement_results[idx], Exception):
+            achievements_data = achievement_results[idx]
+
+        game_data = {
             "externalId": app_id,
             "title": g["name"],
             "playtimeMinutes": g.get("playtime_forever", 0),
@@ -120,6 +177,11 @@ async def fetch_steam(user_id: str):
             "recentlyPlayed": True,
             "recentPlayOrder": idx  # Порядок в списке недавних (0 = самая свежая)
         }
+
+        if achievements_data:
+            game_data["achievements"] = achievements_data
+
+        games_dict[app_id] = game_data
 
     # Добавляем owned games (которых нет в недавних)
     owned_games = owned_data.get("response", {}).get("games", [])
