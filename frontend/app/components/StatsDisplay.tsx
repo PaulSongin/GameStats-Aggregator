@@ -32,17 +32,18 @@ export default function StatsDisplay({ stats }: StatsDisplayProps) {
         <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">
           Games Library
         </h3>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Sorted by recent activity
+        </p>
         {stats.games.length === 0 ? (
           <p className="text-zinc-600 dark:text-zinc-400 text-center py-8">
             No games found for this user.
           </p>
         ) : (
           <div className="grid gap-3">
-            {stats.games
-              .sort((a, b) => b.playtimeMinutes - a.playtimeMinutes)
-              .map((game) => (
-                <GameCard key={game.externalId} game={game} />
-              ))}
+            {stats.games.map((game) => (
+              <GameCard key={game.externalId} game={game} />
+            ))}
           </div>
         )}
       </div>

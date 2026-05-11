@@ -59,7 +59,21 @@ async def fetch_steam(user_id: str):
 
     async with httpx.AsyncClient() as client:
         try:
-            # 1. Получаем owned games (игры в библиотеке)
+            # 1. Получаем информацию о пользователе (имя профиля)
+            user_url = "http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/"
+            user_params = {
+                "key": STEAM_API_KEY,
+                "steamids": steam_id
+            }
+            user_res = await client.get(user_url, params=user_params, timeout=10.0)
+            user_res.raise_for_status()
+            user_data = user_res.json()
+
+            # Извлекаем имя пользователя
+            players = user_data.get("response", {}).get("players", [])
+            username = players[0].get("personaname", steam_id) if players else steam_id
+
+            # 2. Получаем owned games (игры в библиотеке)
             owned_url = "http://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/"
             owned_params = {
                 "key": STEAM_API_KEY,
@@ -71,7 +85,7 @@ async def fetch_steam(user_id: str):
             owned_res.raise_for_status()
             owned_data = owned_res.json()
 
-            # 2. Получаем recently played games (включая семейные игры)
+            # 3. Получаем recently played games (включая семейные игры)
             recent_url = "http://api.steampowered.com/IPlayerService/GetRecentlyPlayedGames/v0001/"
             recent_params = {
                 "key": STEAM_API_KEY,
@@ -88,44 +102,62 @@ async def fetch_steam(user_id: str):
 
     # Объединяем данные из обоих источников
     games_dict = {}
+    recent_app_ids = set()
 
-    # Добавляем owned games
-    owned_games = owned_data.get("response", {}).get("games", [])
-    for g in owned_games:
+    # Сначала обрабатываем recently played games для определения порядка
+    recent_games = recent_data.get("response", {}).get("games", [])
+    for idx, g in enumerate(recent_games):
+        app_id = str(g["appid"])
+        recent_app_ids.add(app_id)
         icon_hash = g.get('img_icon_url', '')
         icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
 
-        games_dict[str(g["appid"])] = {
-            "externalId": str(g["appid"]),
+        games_dict[app_id] = {
+            "externalId": app_id,
             "title": g["name"],
             "playtimeMinutes": g.get("playtime_forever", 0),
-            "iconUrl": icon_url
+            "iconUrl": icon_url,
+            "recentlyPlayed": True,
+            "recentPlayOrder": idx  # Порядок в списке недавних (0 = самая свежая)
         }
 
-    # Добавляем/обновляем recently played games (могут включать семейные игры)
-    recent_games = recent_data.get("response", {}).get("games", [])
-    for g in recent_games:
+    # Добавляем owned games (которых нет в недавних)
+    owned_games = owned_data.get("response", {}).get("games", [])
+    for g in owned_games:
         app_id = str(g["appid"])
-        icon_hash = g.get('img_icon_url', '')
-        icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
 
-        # Если игра уже есть, обновляем время (используем максимальное)
         if app_id in games_dict:
+            # Обновляем время, если owned показывает больше
             games_dict[app_id]["playtimeMinutes"] = max(
                 games_dict[app_id]["playtimeMinutes"],
                 g.get("playtime_forever", 0)
             )
         else:
-            # Добавляем новую игру (например, из семейного доступа)
+            # Добавляем игру, в которую давно не играли
+            icon_hash = g.get('img_icon_url', '')
+            icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
+
             games_dict[app_id] = {
                 "externalId": app_id,
                 "title": g["name"],
                 "playtimeMinutes": g.get("playtime_forever", 0),
-                "iconUrl": icon_url
+                "iconUrl": icon_url,
+                "recentlyPlayed": False,
+                "recentPlayOrder": 9999  # Большое число для старых игр
             }
 
-    games = list(games_dict.values())
-    return {"platform": "steam", "userId": steam_id, "games": games}
+    # Сортируем: сначала недавние (по recentPlayOrder), потом остальные (по времени игры)
+    games = sorted(
+        games_dict.values(),
+        key=lambda x: (not x["recentlyPlayed"], x["recentPlayOrder"], -x["playtimeMinutes"])
+    )
+
+    # Убираем служебные поля перед отправкой
+    for game in games:
+        game.pop("recentlyPlayed", None)
+        game.pop("recentPlayOrder", None)
+
+    return {"platform": "steam", "userId": username, "games": games}
 
 @app.get("/fetch/psn/{online_id}")
 async def fetch_psn(online_id: str):
