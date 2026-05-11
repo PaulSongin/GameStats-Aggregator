@@ -104,7 +104,25 @@ async def fetch_steam(user_id: str):
     # Функция для получения достижений игры
     async def get_game_achievements(client, app_id: str):
         try:
-            # Получаем статистику достижений пользователя
+            # 1. Получаем схему достижений (для локализованных названий)
+            schema_url = "http://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/"
+            schema_params = {
+                "key": STEAM_API_KEY,
+                "appid": app_id
+            }
+            schema_res = await client.get(schema_url, params=schema_params, timeout=5.0)
+
+            # Создаём словарь apiname -> displayName
+            achievement_names = {}
+            if schema_res.status_code == 200:
+                schema_data = schema_res.json()
+                available_achievements = schema_data.get("game", {}).get("availableGameStats", {}).get("achievements", [])
+                achievement_names = {
+                    ach.get("name"): ach.get("displayName", ach.get("name"))
+                    for ach in available_achievements
+                }
+
+            # 2. Получаем статистику достижений пользователя
             user_stats_url = "http://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v0001/"
             params = {
                 "key": STEAM_API_KEY,
@@ -137,7 +155,7 @@ async def fetch_steam(user_id: str):
                 "unlocked": unlocked,
                 "recentAchievements": [
                     {
-                        "name": a.get("apiname", ""),
+                        "name": achievement_names.get(a.get("apiname", ""), a.get("apiname", "Unknown Achievement")),
                         "unlockTime": a.get("unlocktime", 0)
                     } for a in recent
                 ]
@@ -227,15 +245,36 @@ async def fetch_psn(online_id: str):
         psnawp = PSNAWP(PSN_NPSSO)
         user = psnawp.user(online_id=online_id)
         titles = user.title_stats()
-        
+
         games = []
         for t in titles:
-            games.append({
+            game_data = {
                 "externalId": t.title_id,
                 "title": t.name,
                 "playtimeMinutes": int(t.play_duration.total_seconds() // 60) if t.play_duration else 0,
                 "iconUrl": t.image_url
-            })
+            }
+
+            # Пытаемся получить трофеи для игры
+            try:
+                trophy_titles = user.trophy_titles()
+                matching_trophy = next((tt for tt in trophy_titles if tt.title_id == t.title_id), None)
+
+                if matching_trophy:
+                    earned = matching_trophy.earned_trophies.bronze + matching_trophy.earned_trophies.silver + matching_trophy.earned_trophies.gold + matching_trophy.earned_trophies.platinum
+                    total = matching_trophy.defined_trophies.bronze + matching_trophy.defined_trophies.silver + matching_trophy.defined_trophies.gold + matching_trophy.defined_trophies.platinum
+
+                    if total > 0:
+                        game_data["achievements"] = {
+                            "total": total,
+                            "unlocked": earned,
+                            "recentAchievements": []  # PSN API не предоставляет временные метки для трофеев через psnawp
+                        }
+            except Exception as trophy_error:
+                logger.debug(f"Failed to get trophies for {t.title_id}: {trophy_error}")
+
+            games.append(game_data)
+
         return {"platform": "psn", "userId": online_id, "games": games}
     except Exception as e:
         logger.error(f"PSN Error for {online_id}: {e}")
@@ -269,10 +308,24 @@ async def fetch_xbox(gamertag: str):
     titles = data.get("titles", [])
     games = []
     for t in titles:
-        games.append({
+        game_data = {
             "externalId": str(t.get("titleId")),
             "title": t.get("name"),
             "playtimeMinutes": 0,
             "iconUrl": t.get("displayImage")
-        })
+        }
+
+        # Добавляем информацию о достижениях, если есть
+        current_achievements = t.get("achievement", {}).get("currentAchievements", 0)
+        total_achievements = t.get("achievement", {}).get("totalAchievements", 0)
+
+        if total_achievements > 0:
+            game_data["achievements"] = {
+                "total": total_achievements,
+                "unlocked": current_achievements,
+                "recentAchievements": []  # Xbox API через xbl.io не предоставляет временные метки
+            }
+
+        games.append(game_data)
+
     return {"platform": "xbox", "userId": gamertag, "games": games}
