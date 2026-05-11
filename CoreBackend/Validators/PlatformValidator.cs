@@ -9,8 +9,12 @@ public static class PlatformValidator
         if (string.IsNullOrWhiteSpace(steamId))
             return (false, "Steam ID cannot be empty");
 
-        if (!Regex.IsMatch(steamId, @"^\d{17}$"))
-            return (false, "Steam ID must be exactly 17 digits");
+        // Принимаем либо 17-значный Steam ID64, либо никнейм (vanity URL)
+        bool isSteamId64 = Regex.IsMatch(steamId, @"^\d{17}$");
+        bool isVanityUrl = Regex.IsMatch(steamId, @"^[a-zA-Z0-9_\- ]{3,32}$");
+
+        if (!isSteamId64 && !isVanityUrl)
+            return (false, "Steam ID must be either a 17-digit Steam ID64 or a valid username");
 
         return (true, null);
     }
