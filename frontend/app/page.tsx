@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { fetchStats, UnifiedStats } from '@/lib/api';
 import { extractSteamId } from '@/lib/utils';
 import StatsDisplay from './components/StatsDisplay';
-import RecentAchievements from './components/RecentAchievements';
 
 type Platform = 'steam' | 'psn' | 'xbox';
 
@@ -119,12 +118,7 @@ export default function Home() {
           )}
         </div>
 
-        {stats && (
-          <>
-            <StatsDisplay stats={stats} />
-            <RecentAchievements stats={stats} />
-          </>
-        )}
+        {stats && <StatsDisplay stats={stats} />}
       </div>
     </div>
   );
