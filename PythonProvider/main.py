@@ -290,17 +290,22 @@ async def fetch_xbox(gamertag: str):
             res = await client.get(f"https://xbl.io/api/v2/friends/search?gt={gamertag}", headers=headers, timeout=10.0)
             res.raise_for_status()
             user_data = res.json()
-            
-            profiles = user_data.get('profileUsers', [])
+
+            # xbl.io API возвращает данные в структуре {"content": {...}}
+            content = user_data.get('content', {})
+            profiles = content.get('profileUsers', [])
             if not profiles:
                 return {"platform": "xbox", "userId": gamertag, "games": [], "message": "User not found"}
-            
+
             xuid = profiles[0]['id']
-            
+
             # 2. Получаем игры
             games_res = await client.get(f"https://xbl.io/api/v2/achievements/player/{xuid}", headers=headers, timeout=10.0)
             games_res.raise_for_status()
-            data = games_res.json()
+            games_data = games_res.json()
+
+            # Извлекаем titles из content
+            data = games_data.get('content', {})
         except Exception as e:
             logger.error(f"Xbox Error for {gamertag}: {e}")
             raise HTTPException(status_code=502, detail=f"Xbox API error: {e}")
@@ -316,10 +321,12 @@ async def fetch_xbox(gamertag: str):
         }
 
         # Добавляем информацию о достижениях, если есть
-        current_achievements = t.get("achievement", {}).get("currentAchievements", 0)
-        total_achievements = t.get("achievement", {}).get("totalAchievements", 0)
+        achievement_info = t.get("achievement", {})
+        current_achievements = achievement_info.get("currentAchievements", 0)
+        total_achievements = achievement_info.get("totalAchievements", 0)
 
-        if total_achievements > 0:
+        # Показываем достижения, если есть хотя бы одно разблокированное или известно общее количество
+        if current_achievements > 0 or total_achievements > 0:
             game_data["achievements"] = {
                 "total": total_achievements,
                 "unlocked": current_achievements,
