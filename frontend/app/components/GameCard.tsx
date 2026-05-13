@@ -8,9 +8,25 @@ interface GameCardProps {
 export default function GameCard({ game }: GameCardProps) {
   const hours = Math.floor(game.playtimeMinutes / 60);
   const minutes = game.playtimeMinutes % 60;
-  const achievementProgress = game.achievements
+  const achievementProgress = game.achievements && game.achievements.total
     ? (game.achievements.unlocked / game.achievements.total) * 100
     : 0;
+  const hasValidTotal = game.achievements && game.achievements.total && game.achievements.total > 0;
+
+  // Форматируем дату последней игры
+  const formatLastPlayed = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return 'Today';
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)} months ago`;
+    return date.toLocaleDateString();
+  };
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-md hover:shadow-lg transition-shadow p-4">
@@ -35,21 +51,37 @@ export default function GameCard({ game }: GameCardProps) {
             {game.title}
           </h3>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {hours > 0 && `${hours}h `}
-            {minutes}m played
+            {game.playtimeMinutes > 0 ? (
+              <>
+                {hours > 0 && `${hours}h `}
+                {minutes}m played
+              </>
+            ) : game.lastPlayed ? (
+              <>Last played: {formatLastPlayed(game.lastPlayed)}</>
+            ) : (
+              'No playtime data'
+            )}
           </p>
           {game.achievements && (
             <div className="mt-2">
               <div className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400 mb-1">
-                <span>🏆 {game.achievements.unlocked}/{game.achievements.total}</span>
-                <span className="text-zinc-400">({Math.round(achievementProgress)}%)</span>
+                {hasValidTotal ? (
+                  <>
+                    <span>🏆 {game.achievements.unlocked}/{game.achievements.total}</span>
+                    <span className="text-zinc-400">({Math.round(achievementProgress)}%)</span>
+                  </>
+                ) : (
+                  <span>🏆 {game.achievements.unlocked} unlocked</span>
+                )}
               </div>
-              <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-yellow-400 to-yellow-600 h-2 rounded-full transition-all"
-                  style={{ width: `${achievementProgress}%` }}
-                />
-              </div>
+              {hasValidTotal && (
+                <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-yellow-400 to-yellow-600 h-2 rounded-full transition-all"
+                    style={{ width: `${achievementProgress}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

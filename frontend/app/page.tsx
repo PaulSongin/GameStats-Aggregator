@@ -14,13 +14,15 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent, forceRefresh = false) => {
     e.preventDefault();
     if (!userId.trim()) return;
 
     setLoading(true);
     setError(null);
-    setStats(null);
+    if (!forceRefresh) {
+      setStats(null);
+    }
 
     try {
       // Для Steam извлекаем ID из URL, если пользователь вставил полный URL
@@ -28,13 +30,18 @@ export default function Home() {
         ? extractSteamId(userId.trim())
         : userId.trim();
 
-      const data = await fetchStats(platform, processedUserId);
+      const data = await fetchStats(platform, processedUserId, forceRefresh);
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch stats');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    await handleSubmit(e as any, true);
   };
 
   const platformPlaceholders = {
@@ -102,13 +109,27 @@ export default function Home() {
               </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || !userId.trim()}
-              className="w-full py-3 px-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
-            >
-              {loading ? 'Loading...' : 'Fetch Stats'}
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                disabled={loading || !userId.trim()}
+                className="flex-1 py-3 px-6 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+              >
+                {loading ? 'Loading...' : 'Fetch Stats'}
+              </button>
+
+              {stats && (
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={loading}
+                  className="py-3 px-6 bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-semibold rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md hover:shadow-lg"
+                  title="Refresh data from API (bypass cache)"
+                >
+                  🔄 Refresh
+                </button>
+              )}
+            </div>
           </form>
 
           {error && (

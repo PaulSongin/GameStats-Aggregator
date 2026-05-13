@@ -1,7 +1,7 @@
 namespace CoreBackend.Models;
 
 public record AchievementInfo(
-    int Total,
+    int? Total,
     int Unlocked,
     List<RecentAchievement> RecentAchievements
 );
@@ -16,7 +16,8 @@ public record GameInfo(
     string Title,
     int PlaytimeMinutes,
     string? IconUrl,
-    AchievementInfo? Achievements
+    AchievementInfo? Achievements,
+    DateTime? LastPlayed
 );
 
 public record UnifiedStats(

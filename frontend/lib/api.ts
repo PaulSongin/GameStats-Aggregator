@@ -5,8 +5,9 @@ export interface GameInfo {
   title: string;
   playtimeMinutes: number;
   iconUrl: string | null;
+  lastPlayed?: string | null;
   achievements?: {
-    total: number;
+    total: number | null;
     unlocked: number;
     recentAchievements: Array<{
       name: string;

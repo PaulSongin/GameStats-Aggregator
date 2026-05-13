@@ -246,6 +246,15 @@ async def fetch_psn(online_id: str):
         user = psnawp.user(online_id=online_id)
         titles = user.title_stats()
 
+        # Получаем все трофеи один раз
+        try:
+            trophy_titles = user.trophy_titles()
+            # Сопоставляем по названию игры (title_name)
+            trophy_dict = {tt.title_name.lower().strip(): tt for tt in trophy_titles}
+        except Exception as trophy_error:
+            logger.warning(f"Failed to get trophy titles for {online_id}: {trophy_error}")
+            trophy_dict = {}
+
         games = []
         for t in titles:
             game_data = {
@@ -255,23 +264,18 @@ async def fetch_psn(online_id: str):
                 "iconUrl": t.image_url
             }
 
-            # Пытаемся получить трофеи для игры
-            try:
-                trophy_titles = user.trophy_titles()
-                matching_trophy = next((tt for tt in trophy_titles if tt.title_id == t.title_id), None)
+            # Добавляем трофеи, если они есть (сопоставляем по названию)
+            matching_trophy = trophy_dict.get(t.name.lower().strip())
+            if matching_trophy:
+                earned = matching_trophy.earned_trophies.bronze + matching_trophy.earned_trophies.silver + matching_trophy.earned_trophies.gold + matching_trophy.earned_trophies.platinum
+                total = matching_trophy.defined_trophies.bronze + matching_trophy.defined_trophies.silver + matching_trophy.defined_trophies.gold + matching_trophy.defined_trophies.platinum
 
-                if matching_trophy:
-                    earned = matching_trophy.earned_trophies.bronze + matching_trophy.earned_trophies.silver + matching_trophy.earned_trophies.gold + matching_trophy.earned_trophies.platinum
-                    total = matching_trophy.defined_trophies.bronze + matching_trophy.defined_trophies.silver + matching_trophy.defined_trophies.gold + matching_trophy.defined_trophies.platinum
-
-                    if total > 0:
-                        game_data["achievements"] = {
-                            "total": total,
-                            "unlocked": earned,
-                            "recentAchievements": []  # PSN API не предоставляет временные метки для трофеев через psnawp
-                        }
-            except Exception as trophy_error:
-                logger.debug(f"Failed to get trophies for {t.title_id}: {trophy_error}")
+                if total > 0:
+                    game_data["achievements"] = {
+                        "total": total,
+                        "unlocked": earned,
+                        "recentAchievements": []  # PSN API не предоставляет временные метки для трофеев через psnawp
+                    }
 
             games.append(game_data)
 
@@ -299,40 +303,51 @@ async def fetch_xbox(gamertag: str):
 
             xuid = profiles[0]['id']
 
-            # 2. Получаем игры
-            games_res = await client.get(f"https://xbl.io/api/v2/achievements/player/{xuid}", headers=headers, timeout=10.0)
+            # 2. Получаем игры (увеличиваем timeout для пользователей с большой библиотекой)
+            games_res = await client.get(f"https://xbl.io/api/v2/achievements/player/{xuid}", headers=headers, timeout=30.0)
             games_res.raise_for_status()
             games_data = games_res.json()
 
             # Извлекаем titles из content
             data = games_data.get('content', {})
+            titles = data.get("titles", [])
+            logger.info(f"Xbox API response for {gamertag}: found {len(titles)} titles")
         except Exception as e:
-            logger.error(f"Xbox Error for {gamertag}: {e}")
-            raise HTTPException(status_code=502, detail=f"Xbox API error: {e}")
-        
-    titles = data.get("titles", [])
+            logger.error(f"Xbox Error for {gamertag}: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=502, detail=f"Xbox API error: {str(e)}")
     games = []
     for t in titles:
-        game_data = {
-            "externalId": str(t.get("titleId")),
-            "title": t.get("name"),
-            "playtimeMinutes": 0,
-            "iconUrl": t.get("displayImage")
-        }
+        try:
+            # Извлекаем дату последней игры
+            title_history = t.get("titleHistory", {})
+            last_played = title_history.get("lastTimePlayed")
 
-        # Добавляем информацию о достижениях, если есть
-        achievement_info = t.get("achievement", {})
-        current_achievements = achievement_info.get("currentAchievements", 0)
-        total_achievements = achievement_info.get("totalAchievements", 0)
-
-        # Показываем достижения, если есть хотя бы одно разблокированное или известно общее количество
-        if current_achievements > 0 or total_achievements > 0:
-            game_data["achievements"] = {
-                "total": total_achievements,
-                "unlocked": current_achievements,
-                "recentAchievements": []  # Xbox API через xbl.io не предоставляет временные метки
+            game_data = {
+                "externalId": str(t.get("titleId")),
+                "title": t.get("name"),
+                "playtimeMinutes": 0,
+                "iconUrl": t.get("displayImage"),
+                "lastPlayed": last_played  # Добавляем дату последней игры
             }
 
-        games.append(game_data)
+            # Добавляем информацию о достижениях, если есть
+            achievement_info = t.get("achievement", {})
+            current_achievements = achievement_info.get("currentAchievements", 0)
+            total_achievements = achievement_info.get("totalAchievements", 0)
+            total_gamerscore = achievement_info.get("totalGamerscore", 0)
+
+            # Xbox API иногда возвращает totalAchievements=0, даже если достижения есть
+            # В таком случае показываем только количество разблокированных
+            if current_achievements > 0 or total_achievements > 0 or total_gamerscore > 0:
+                game_data["achievements"] = {
+                    "total": total_achievements if total_achievements > 0 else None,
+                    "unlocked": current_achievements,
+                    "recentAchievements": []  # Xbox API через xbl.io не предоставляет временные метки
+                }
+
+            games.append(game_data)
+        except Exception as game_error:
+            logger.warning(f"Failed to process game for {gamertag}: {game_error}")
+            continue
 
     return {"platform": "xbox", "userId": gamertag, "games": games}

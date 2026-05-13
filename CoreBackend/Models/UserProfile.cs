@@ -16,6 +16,7 @@ public class GameRecord
     public required string Title { get; set; }
     public int PlaytimeMinutes { get; set; }
     public string? IconUrl { get; set; }
+    public DateTime? LastPlayed { get; set; }
     public int UserProfileId { get; set; }
     public UserProfile? UserProfile { get; set; }
 }

@@ -91,7 +91,7 @@ public class StatsController : ControllerBase
                     var cachedStats = new UnifiedStats(
                         cached.Platform,
                         cached.UserId,
-                        cached.Games.Select(g => new GameInfo(g.ExternalId, g.Title, g.PlaytimeMinutes, g.IconUrl, null)).ToList()
+                        cached.Games.Select(g => new GameInfo(g.ExternalId, g.Title, g.PlaytimeMinutes, g.IconUrl, null, g.LastPlayed)).ToList()
                     );
 
                     // Сохраняем в Redis для следующих запросов (TTL: 5 минут)
@@ -185,7 +185,8 @@ public class StatsController : ControllerBase
             ExternalId = g.ExternalId,
             Title = g.Title,
             PlaytimeMinutes = g.PlaytimeMinutes,
-            IconUrl = g.IconUrl
+            IconUrl = g.IconUrl,
+            LastPlayed = g.LastPlayed
         }).ToList();
 
         await _db.SaveChangesAsync();

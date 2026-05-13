@@ -9,6 +9,7 @@ interface StatsDisplayProps {
 export default function StatsDisplay({ stats }: StatsDisplayProps) {
   const totalPlaytime = stats.games.reduce((sum, game) => sum + game.playtimeMinutes, 0);
   const totalHours = Math.floor(totalPlaytime / 60);
+  const hasPlaytimeData = totalPlaytime > 0;
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -22,10 +23,12 @@ export default function StatsDisplay({ stats }: StatsDisplayProps) {
             <p className="text-sm opacity-75">Total Games</p>
             <p className="text-3xl font-bold">{stats.games.length}</p>
           </div>
-          <div>
-            <p className="text-sm opacity-75">Total Playtime</p>
-            <p className="text-3xl font-bold">{totalHours}h</p>
-          </div>
+          {hasPlaytimeData && (
+            <div>
+              <p className="text-sm opacity-75">Total Playtime</p>
+              <p className="text-3xl font-bold">{totalHours}h</p>
+            </div>
+          )}
         </div>
       </div>
 
