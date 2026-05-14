@@ -171,10 +171,26 @@ async def fetch_steam(user_id: str):
     # Сначала обрабатываем recently played games для определения порядка
     recent_games = recent_data.get("response", {}).get("games", [])
 
-    # Получаем достижения для недавних игр параллельно
+    # Собираем все игры с наигранным временем для загрузки достижений
+    owned_games = owned_data.get("response", {}).get("games", [])
+    all_played_games = list(recent_games)
+
+    # Добавляем owned игры с временем, которых нет в recent
+    recent_app_ids_temp = {str(g["appid"]) for g in recent_games}
+    for g in owned_games:
+        if g.get("playtime_forever", 0) > 0 and str(g["appid"]) not in recent_app_ids_temp:
+            all_played_games.append(g)
+
+    # Получаем достижения для всех игр с наигранным временем параллельно
     async with httpx.AsyncClient() as client:
-        achievement_tasks = [get_game_achievements(client, str(g["appid"])) for g in recent_games[:10]]  # Только для топ-10
+        achievement_tasks = [get_game_achievements(client, str(g["appid"])) for g in all_played_games]
         achievement_results = await asyncio.gather(*achievement_tasks, return_exceptions=True)
+
+    # Создаем словарь appid -> achievements для быстрого доступа
+    achievements_map = {}
+    for idx, game in enumerate(all_played_games):
+        if idx < len(achievement_results) and not isinstance(achievement_results[idx], Exception):
+            achievements_map[str(game["appid"])] = achievement_results[idx]
 
     for idx, g in enumerate(recent_games):
         app_id = str(g["appid"])
@@ -182,10 +198,8 @@ async def fetch_steam(user_id: str):
         icon_hash = g.get('img_icon_url', '')
         icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
 
-        # Добавляем данные о достижениях, если они есть
-        achievements_data = None
-        if idx < len(achievement_results) and not isinstance(achievement_results[idx], Exception):
-            achievements_data = achievement_results[idx]
+        # Добавляем данные о достижениях из словаря
+        achievements_data = achievements_map.get(app_id)
 
         game_data = {
             "externalId": app_id,
@@ -202,7 +216,6 @@ async def fetch_steam(user_id: str):
         games_dict[app_id] = game_data
 
     # Добавляем owned games (которых нет в недавних)
-    owned_games = owned_data.get("response", {}).get("games", [])
     for g in owned_games:
         app_id = str(g["appid"])
 
@@ -217,7 +230,7 @@ async def fetch_steam(user_id: str):
             icon_hash = g.get('img_icon_url', '')
             icon_url = f"http://media.steampowered.com/steamcommunity/public/images/apps/{g['appid']}/{icon_hash}.jpg" if icon_hash else None
 
-            games_dict[app_id] = {
+            game_data = {
                 "externalId": app_id,
                 "title": g["name"],
                 "playtimeMinutes": g.get("playtime_forever", 0),
@@ -225,6 +238,13 @@ async def fetch_steam(user_id: str):
                 "recentlyPlayed": False,
                 "recentPlayOrder": 9999  # Большое число для старых игр
             }
+
+            # Добавляем достижения, если они есть
+            achievements_data = achievements_map.get(app_id)
+            if achievements_data:
+                game_data["achievements"] = achievements_data
+
+            games_dict[app_id] = game_data
 
     # Сортируем: сначала недавние (по recentPlayOrder), потом остальные (по времени игры)
     games = sorted(
@@ -288,6 +308,30 @@ async def fetch_psn(online_id: str):
 @app.get("/fetch/xbox/{gamertag}")
 async def fetch_xbox(gamertag: str):
     headers = {"X-Authorization": XBOX_API_KEY}
+
+    # Функция для retry с экспоненциальной задержкой
+    async def fetch_with_retry(client, url, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                timeout = httpx.Timeout(120.0 if attempt > 0 else 60.0, connect=15.0)
+                res = await client.get(url, headers=headers, timeout=timeout)
+                res.raise_for_status()
+                return res
+            except httpx.ReadTimeout:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # 1s, 2s, 4s
+                    logger.warning(f"Timeout on attempt {attempt + 1}/{max_retries}, retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 504 and attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Gateway timeout on attempt {attempt + 1}/{max_retries}, retrying in {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
+
     async with httpx.AsyncClient() as client:
         try:
             # 1. Получаем XUID
@@ -303,18 +347,25 @@ async def fetch_xbox(gamertag: str):
 
             xuid = profiles[0]['id']
 
-            # 2. Получаем игры (увеличиваем timeout для пользователей с большой библиотекой)
-            games_res = await client.get(f"https://xbl.io/api/v2/achievements/player/{xuid}", headers=headers, timeout=30.0)
-            games_res.raise_for_status()
+            # 2. Получаем игры с retry логикой
+            logger.info(f"Fetching Xbox games for {gamertag} (XUID: {xuid})...")
+            games_res = await fetch_with_retry(client, f"https://xbl.io/api/v2/achievements/player/{xuid}")
             games_data = games_res.json()
 
             # Извлекаем titles из content
             data = games_data.get('content', {})
             titles = data.get("titles", [])
             logger.info(f"Xbox API response for {gamertag}: found {len(titles)} titles")
+        except httpx.ReadTimeout:
+            logger.error(f"Xbox API timeout for {gamertag} after all retries")
+            raise HTTPException(status_code=504, detail="Xbox API timeout - user has too many games, try again later")
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Xbox API HTTP error for {gamertag}: {e.response.status_code}")
+            raise HTTPException(status_code=502, detail=f"Xbox API returned error: {e.response.status_code}")
         except Exception as e:
             logger.error(f"Xbox Error for {gamertag}: {str(e)}", exc_info=True)
             raise HTTPException(status_code=502, detail=f"Xbox API error: {str(e)}")
+
     games = []
     for t in titles:
         try:
