@@ -5,7 +5,10 @@ using StackExchange.Redis;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(string.Empty, client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(5); // Увеличиваем таймаут до 5 минут для Xbox (1000 игр)
+});
 
 // Добавляем CORS
 builder.Services.AddCors(options =>

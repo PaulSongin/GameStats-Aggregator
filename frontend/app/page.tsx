@@ -10,6 +10,7 @@ type Platform = 'steam' | 'psn' | 'xbox';
 export default function Home() {
   const [platform, setPlatform] = useState<Platform>('steam');
   const [userId, setUserId] = useState('');
+  const [processedUserId, setProcessedUserId] = useState(''); // Сохраняем обработанный ID для refresh
   const [stats, setStats] = useState<UnifiedStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,11 +27,12 @@ export default function Home() {
 
     try {
       // Для Steam извлекаем ID из URL, если пользователь вставил полный URL
-      const processedUserId = platform === 'steam'
+      const finalUserId = platform === 'steam'
         ? extractSteamId(userId.trim())
         : userId.trim();
 
-      const data = await fetchStats(platform, processedUserId, forceRefresh);
+      const data = await fetchStats(platform, finalUserId, forceRefresh);
+      setProcessedUserId(finalUserId); // Сохраняем для refresh
       setStats(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch stats');
@@ -41,7 +43,20 @@ export default function Home() {
 
   const handleRefresh = async (e: React.MouseEvent) => {
     e.preventDefault();
-    await handleSubmit(e as any, true);
+
+    if (!processedUserId) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = await fetchStats(platform, processedUserId, true);
+      setStats(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch stats');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const platformPlaceholders = {

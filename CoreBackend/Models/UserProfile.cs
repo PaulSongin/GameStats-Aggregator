@@ -17,6 +17,12 @@ public class GameRecord
     public int PlaytimeMinutes { get; set; }
     public string? IconUrl { get; set; }
     public DateTime? LastPlayed { get; set; }
+
+    // Достижения
+    public int? AchievementsTotal { get; set; }
+    public int? AchievementsUnlocked { get; set; }
+    public string? RecentAchievementsJson { get; set; } // JSON массив [{name, unlockTime}]
+
     public int UserProfileId { get; set; }
     public UserProfile? UserProfile { get; set; }
 }

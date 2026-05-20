@@ -63,7 +63,9 @@ public class StatsController : ControllerBase
             ));
         }
 
-        var cacheKey = $"stats:{platform}:{id}";
+        // Версионирование кэша для автоматической инвалидации при изменении структуры
+        const string CACHE_VERSION = "v2";
+        var cacheKey = $"stats:{CACHE_VERSION}:{platform}:{id}";
 
         try
         {
@@ -91,7 +93,22 @@ public class StatsController : ControllerBase
                     var cachedStats = new UnifiedStats(
                         cached.Platform,
                         cached.UserId,
-                        cached.Games.Select(g => new GameInfo(g.ExternalId, g.Title, g.PlaytimeMinutes, g.IconUrl, null, g.LastPlayed)).ToList()
+                        cached.Games.Select(g => new GameInfo(
+                            g.ExternalId,
+                            g.Title,
+                            g.PlaytimeMinutes,
+                            g.IconUrl,
+                            g.AchievementsTotal.HasValue || g.AchievementsUnlocked.HasValue
+                                ? new AchievementInfo(
+                                    g.AchievementsTotal,
+                                    g.AchievementsUnlocked ?? 0,
+                                    string.IsNullOrEmpty(g.RecentAchievementsJson)
+                                        ? new List<RecentAchievement>()
+                                        : JsonSerializer.Deserialize<List<RecentAchievement>>(g.RecentAchievementsJson) ?? new List<RecentAchievement>()
+                                )
+                                : null,
+                            g.LastPlayed
+                        )).ToList()
                     );
 
                     // Сохраняем в Redis для следующих запросов (TTL: 5 минут)
@@ -186,7 +203,12 @@ public class StatsController : ControllerBase
             Title = g.Title,
             PlaytimeMinutes = g.PlaytimeMinutes,
             IconUrl = g.IconUrl,
-            LastPlayed = g.LastPlayed
+            LastPlayed = g.LastPlayed,
+            AchievementsTotal = g.Achievements?.Total,
+            AchievementsUnlocked = g.Achievements?.Unlocked,
+            RecentAchievementsJson = g.Achievements?.RecentAchievements != null && g.Achievements.RecentAchievements.Count > 0
+                ? JsonSerializer.Serialize(g.Achievements.RecentAchievements)
+                : null
         }).ToList();
 
         await _db.SaveChangesAsync();
